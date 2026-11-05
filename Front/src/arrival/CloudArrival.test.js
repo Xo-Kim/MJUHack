@@ -6,14 +6,14 @@ const originalEnvironment=process.env.NODE_ENV;
 jest.mock('./CloudCanvas',()=>jest.fn());
 jest.mock('./HeroCanvas',()=>{
   const React=require('react');
-  return function Model({onReady}){React.useEffect(onReady,[onReady]);return <div role="img" aria-label="근두운을 탄 홍길동 3D"/>;};
+  return function Model({onReady,hasPosition}){React.useEffect(onReady,[onReady]);return <div role="img" aria-label="근두운을 탄 홍길동 3D" data-has-position={String(hasPosition)}/>;};
 });
 jest.mock('./LandingMap',()=>{
   const React=require('react');
   return function Map({position,onReady,phase,onSelect}){React.useEffect(()=>{if(position||phase==='preparing')onReady();},[position,onReady,phase]);return <div data-testid="persistent-map"><button onClick={()=>onSelect('JNG09')}>테스트 지도 핀</button></div>;};
 });
 jest.mock('./location',()=>({...jest.requireActual('./location'),requestPosition:jest.fn(),watchPosition:jest.fn()}));
-beforeEach(()=>{process.env.NODE_ENV='development';jest.useFakeTimers();window.matchMedia=()=>({matches:false,addEventListener:jest.fn(),removeEventListener:jest.fn()});CloudCanvas.mockImplementation(({opening})=><div data-testid="clearing-clouds" data-opening={opening}/>);watchPosition.mockReturnValue(jest.fn());});
+beforeEach(()=>{process.env.NODE_ENV='development';jest.useFakeTimers();window.matchMedia=()=>({matches:false,addEventListener:jest.fn(),removeEventListener:jest.fn()});CloudCanvas.mockImplementation(({opening})=><div data-testid="clearing-clouds" data-opening={opening}/>);watchPosition.mockReturnValue(jest.fn());requestPosition.mockResolvedValue({latitude:37.57,longitude:126.98,accuracyM:10,observedAt:new Date().toISOString()});});
 afterEach(()=>{process.env.NODE_ENV=originalEnvironment;jest.useRealTimers();jest.clearAllMocks();});
 async function reveal(){fireEvent.wheel(screen.getByRole('region',{name:'seoul times 서울 지도'}),{deltaY:100});await act(async()=>{});act(()=>jest.advanceTimersByTime(2800));}
 function clearClouds(){act(()=>CloudCanvas.mock.calls.at(-1)[0].onCleared());}
@@ -26,7 +26,7 @@ test('scroll replaces BEGIN and keeps a one-second look before the hero leaves f
   fireEvent.wheel(container.firstChild,{deltaY:-100});expect(container.firstChild).toHaveClass('phase-clouds');
   await reveal();expect(container.firstChild).toHaveClass('phase-flying');
   expect(screen.queryByText('아래로 스크롤')).not.toBeInTheDocument();
-  expect(requestPosition).not.toHaveBeenCalled();expect(located).toHaveBeenCalledWith(expect.objectContaining({latitude:37.57}),true);
+  expect(requestPosition).toHaveBeenCalledTimes(1);expect(located).toHaveBeenCalledWith(expect.objectContaining({latitude:37.57}),false);
   expect(screen.queryByRole('button',{name:'가상 위치로 내려가기'})).not.toBeInTheDocument();
   act(()=>jest.advanceTimersByTime(900));expect(container.firstChild).toHaveClass('phase-flying');
   act(()=>jest.advanceTimersByTime(160));expect(container.firstChild).toHaveClass('phase-departing');
@@ -40,11 +40,11 @@ test('a denied real GPS never becomes a visit or demo fix and the scroll sequenc
   process.env.NODE_ENV='production';requestPosition.mockRejectedValue(Object.assign(new Error('위치 권한이 꺼져 있습니다.'),{code:1}));
   const located=jest.fn();const {container}=render(<CloudArrival onLocated={located}/>);
   await reveal();expect(screen.getByRole('alert')).toHaveTextContent('위치 권한');expect(located).not.toHaveBeenCalled();
-  land();expect(container.firstChild).toHaveClass('phase-landed');expect(located).not.toHaveBeenCalled();
+  land();expect(container.firstChild).toHaveClass('phase-landed');expect(located).not.toHaveBeenCalled();expect(watchPosition).not.toHaveBeenCalled();expect(screen.getByRole('alert')).toBeVisible();
 });
-test('keyboard entry and pause preserve the reveal timeline',()=>{
+test('keyboard entry and pause preserve the reveal timeline',async()=>{
   const {container}=render(<CloudArrival/>);
-  fireEvent.keyDown(window,{key:'ArrowDown'});fireEvent.click(screen.getByRole('button',{name:'모션 멈추기'}));
+  fireEvent.keyDown(window,{key:'ArrowDown'});await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'모션 멈추기'}));
   act(()=>jest.advanceTimersByTime(8000));expect(container.firstChild).toHaveClass('phase-revealing');
   fireEvent.click(screen.getByRole('button',{name:'모션 재생'}));act(()=>jest.advanceTimersByTime(2800));expect(container.firstChild).toHaveClass('phase-flying');
 });
@@ -89,4 +89,34 @@ test('fresh real GPS updates use the same map and stopping clears tracking',asyn
   rerender(<CloudArrival onLocated={located} active={false}/>);expect(stopped).toHaveBeenCalledTimes(1);
   rerender(<CloudArrival onLocated={located} active/>);expect(watchPosition).toHaveBeenCalledTimes(2);
   fireEvent.click(screen.getByRole('button',{name:'장소 목록 열기'}));fireEvent.click(screen.getByRole('button',{name:'장소 검색 펼치기'}));fireEvent.click(screen.getByText('위치 설정'));fireEvent.click(screen.getByRole('button',{name:'추적 멈추기'}));expect(stopped).toHaveBeenCalledTimes(2);
+});
+
+
+test('production timeout is visible after landing and live tracking recovers without inventing a fix',async()=>{
+  process.env.NODE_ENV='production';requestPosition.mockRejectedValue(Object.assign(new Error('위치 요청 시간이 초과됐습니다.'),{code:3}));
+  const located=jest.fn();render(<CloudArrival onLocated={located}/>);await reveal();land();
+  expect(screen.getByRole('alert')).toBeVisible();
+  expect(screen.getByRole('button',{name:'현재 위치 다시 확인'})).toBeVisible();
+  expect(watchPosition).toHaveBeenCalled();expect(located).not.toHaveBeenCalled();
+  const next={latitude:37.57,longitude:126.98,accuracyM:100,observedAt:new Date().toISOString()};
+  act(()=>watchPosition.mock.calls.at(-1)[0](next));
+  expect(located).toHaveBeenLastCalledWith(next,false);
+  expect(screen.getByText(/대략적인 위치/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button',{name:'테스트 지도 핀'}));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+test('inaccurate and outside-area fixes never place the hero at a default or clamped current location',async()=>{
+  const coarse={latitude:37.57,longitude:126.98,accuracyM:200,observedAt:new Date().toISOString()};
+  requestPosition.mockResolvedValue(coarse);const located=jest.fn();render(<CloudArrival onLocated={located}/>);await reveal();land();
+  expect(located).toHaveBeenLastCalledWith(coarse,false);
+  expect(screen.getByRole('img',{name:'근두운을 탄 홍길동 3D'})).toHaveAttribute('data-has-position','false');
+  const outside={latitude:35.18,longitude:129.07,accuracyM:10,observedAt:new Date(Date.now()+1).toISOString()};
+  act(()=>watchPosition.mock.calls.at(-1)[0](outside));
+  expect(located).toHaveBeenLastCalledWith(outside,false);
+  expect(screen.getByText(/수신 위치가 서비스 지역 밖/)).toBeVisible();
+  expect(screen.getByRole('img',{name:'근두운을 탄 홍길동 3D'})).toHaveAttribute('data-has-position','false');
+  const precise={...coarse,accuracyM:10,observedAt:new Date(Date.now()+2).toISOString()};
+  act(()=>watchPosition.mock.calls.at(-1)[0](precise));
+  expect(screen.getByRole('img',{name:'근두운을 탄 홍길동 3D'})).toHaveAttribute('data-has-position','true');
 });

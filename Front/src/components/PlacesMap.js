@@ -128,7 +128,7 @@ export default function PlacesMap({ places, selectedId, onSelect, position, posi
     const map = mapRef.current, maps = mapsRef.current;
     if (state !== 'ready' || !map || !maps) return;
     if (world && currentMarker.current && position && hasCoordinates(position)) {
-      currentMarker.current.setTitle?.(positionIsDemo ? '가상 현재 위치' : '현재 위치');
+      currentMarker.current.setTitle?.(positionIsDemo ? '가상 현재 위치' : position?.accuracyM > 20 ? '대략적인 위치' : '현재 위치');
       const from = displayedPosition.current || position;
       let frame, start;
       const duration = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 450;
@@ -150,9 +150,9 @@ export default function PlacesMap({ places, selectedId, onSelect, position, posi
     if (position && hasCoordinates(position)) {
       const dot = document.createElement('span'); dot.className = world ? 'world-avatar-anchor' : 'current-map-pin';
       if (world) { dot.setAttribute('aria-hidden', 'true'); dot.dataset.avatarAnchor = ''; if (anchorRef) anchorRef.current = dot; }
-      else { dot.setAttribute('role', 'img'); dot.setAttribute('aria-label', positionIsDemo ? '가상 현재 위치' : '현재 위치'); }
+      else { dot.setAttribute('role', 'img'); dot.setAttribute('aria-label', positionIsDemo ? '가상 현재 위치' : position?.accuracyM > 20 ? '대략적인 위치' : '현재 위치'); }
       currentMarker.current = new maps.Marker({ map, position: new maps.LatLng(position.latitude, position.longitude),
-        title: positionIsDemo ? '가상 현재 위치' : '현재 위치', zIndex: 200,
+        title: positionIsDemo ? '가상 현재 위치' : position?.accuracyM > 20 ? '대략적인 위치' : '현재 위치', zIndex: 200,
         icon: { content: dot, size: new maps.Size(world ? 1 : 24, world ? 1 : 24), anchor: new maps.Point(world ? 0 : 12, world ? 0 : 12) } });
       displayedPosition.current = position;
     }

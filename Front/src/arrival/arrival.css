@@ -117,3 +117,8 @@
 .arrival-scroll-hint svg { width: 20px; height: 20px; animation: scroll-hint-arrow 1.8s ease-in-out infinite; }
 @keyframes scroll-hint-arrow { 0%,100% { transform: translateY(-2px); opacity: .65; } 50% { transform: translateY(3px); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .arrival-scroll-hint svg { animation: none; } }
+
+.arrival-location-notice { position: absolute; z-index: 12; top: max(72px, env(safe-area-inset-top, 0px)); left: 16px; right: 16px; max-height: 35%; overflow-y: auto; padding: 12px; border-radius: 12px; background: var(--color-surface, #FFF9ED); color: var(--color-ink, #24364B); box-shadow: 0 3px 12px #24364b26; font-size: 11pt; line-height: 1.5; }
+.arrival-location-notice p { margin: 0 0 8px; }
+.arrival-location-notice p:last-child { margin-bottom: 0; }
+.arrival-location-notice button { min-height: 44px; padding: 8px 12px; border: 1px solid currentColor; border-radius: 8px; background: var(--color-brand, #8FCBAD); color: inherit; font: inherit; }

@@ -6,13 +6,13 @@ import WorldControls from './WorldControls';
 import { ARRIVAL_TIMING, NEXT_PHASE } from './heroConfig';
 import { demoPosition, requestPosition, watchPosition } from './location';
 import { filterPlaces } from '../data/places';
+import { containsPoint } from '../data/mapArea';
 import useVisitReader from '../newspaper/useVisitReader';
 import NearbyChat from '../chat/NearbyChat';
 import VisitOverlays from '../newspaper/VisitOverlays';
 import './arrival.css';
 
 export default function CloudArrival({ onLocated, onDemo, active = true }) {
-  const development = process.env.NODE_ENV === 'development';
   const [phase, setPhase] = useState('clouds'), [heroReady, setHeroReady] = useState(false);
   const [cloudsCleared, setCloudsCleared] = useState(false), [position, setPosition] = useState(null), [demo, setDemo] = useState(false);
   const [error, setError] = useState(''), [tracking, setTracking] = useState(false), [updates, setUpdates] = useState(0);
@@ -68,8 +68,8 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
     return watchPosition(next => {
       if (Date.parse(next.observedAt) <= lastFix.current) return;
       lastFix.current = Date.parse(next.observedAt);
-      setPosition(next); setUpdates(value => value + 1); setError(''); setLocationIssue(null); callback.current?.(next, false);
-    }, failure => { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); if (failure.code === 1) setTracking(false); }, lastFix.current);
+      setPosition(next); setDemo(false); setUpdates(value => value + 1); setError(''); setLocationIssue(null); callback.current?.(next, false);
+    }, failure => { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); if ([1, 'insecure', 'unsupported'].includes(failure.code)) setTracking(false); }, lastFix.current);
   }, [tracking, phase, active, hidden]);
 
   const mapReady = useCallback(() => {
@@ -85,7 +85,7 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
     sceneRoot.current.style.setProperty('--avatar-x', view.anchor ? `${view.anchor.x}px` : '50%');
     sceneRoot.current.style.setProperty('--avatar-y', view.anchor ? `${view.anchor.y}px` : '50%');
   }, []);
-  async function locate(real = !development, automatic = false) {
+  async function locate(real = true, automatic = false) {
     const id = ++requestId.current, alreadyLanded = phase === 'landed';
     setError(''); if (!alreadyLanded && !automatic) setPhase('locating');
     try {
@@ -98,12 +98,12 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
         stageTime.current = 0; setCloudsCleared(false);
         setPhase(mapPrepared.current ? 'clearing' : 'preparing');
       }
-    } catch (failure) { if (mounted.current && id === requestId.current) { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); if (failure.code === 1) setTracking(false); if (!alreadyLanded && !automatic) setPhase('flying'); } }
+    } catch (failure) { if (mounted.current && id === requestId.current) { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); if ([1, 'insecure', 'unsupported'].includes(failure.code)) setTracking(false); if (real && ![1, 'insecure', 'unsupported'].includes(failure.code)) setTracking(true); if (!alreadyLanded && !automatic) setPhase('flying'); } }
   }
   function revealFromScroll() {
     if (!active || !heroReady || paused || phaseRef.current !== 'clouds') return;
     phaseRef.current = 'revealing'; stageTime.current = 0; setPhase('revealing');
-    locate(!development, true);
+    locate(true, true);
   }
   startScroll.current = revealFromScroll;
   function moveDemo(east, north) {
@@ -120,15 +120,21 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
     onPointerMove={event => { if (touchStart.current !== null && touchStart.current - event.clientY > 36) { touchStart.current = null; revealFromScroll(); } }}
     onPointerUp={() => { touchStart.current = null; }} onPointerCancel={() => { touchStart.current = null; }}>
     <LandingMap position={position} demo={demo} phase={phase} places={places} selectedId={selectedId} onSelect={reader.select} anchorRef={anchorRef} mapControlRef={mapControlRef} onReady={mapReady}/><div className="arrival-ground-shade"/>
-    {position && <div className="arrival-anchor"><div className="avatar-ground-shadow"/>{['impact', 'pullback'].includes(phase) && <div className="impact-waves"><div className="impact-ring impact-one"/><div className="impact-ring impact-two"/></div>}</div>}
+    {position && (demo || (position.accuracyM <= 20 && containsPoint(position))) && <div className="arrival-anchor"><div className="avatar-ground-shadow"/>{['impact', 'pullback'].includes(phase) && <div className="impact-waves"><div className="impact-ring impact-one"/><div className="impact-ring impact-two"/></div>}</div>}
     {!cloudsCleared && <CloudCanvas opening={landing} paused={isPaused} reduced={reduced} showcase={landing ? 0 : phase === 'clouds' ? .72 : 1} onCleared={cloudClear}/>}
-    <HeroCanvas phase={phase} paused={isPaused} reduced={reduced} onReady={modelReady} onCamera={cameraUpdate} anchorRef={anchorRef} hasPosition={!!position || ['falling', 'impact', 'pullback'].includes(phase)}/>
+    <HeroCanvas phase={phase} paused={isPaused} reduced={reduced} onReady={modelReady} onCamera={cameraUpdate} anchorRef={anchorRef} hasPosition={!!position && (demo || (position.accuracyM <= 20 && containsPoint(position)))}/>
     <h1 className="arrival-sr-only">seoul times</h1>
     <button className="arrival-motion-control" onClick={() => setPaused(value => !value)} aria-pressed={paused} aria-keyshortcuts="Escape">{paused ? '모션 재생' : '모션 멈추기'}</button>
     {phase === 'clouds' && <div className="arrival-scroll-hint" aria-hidden="true"><span>아래로 스크롤</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 4v15m-6-6 6 6 6-6"/></svg></div>}
     {phase === 'clouds' && <p className="arrival-sr-only">아래로 스크롤하거나 위로 쓸어 올려 시작합니다. 키보드 아래 방향키로도 시작할 수 있습니다.</p>}
     {['revealing', 'flying', 'departing', 'following', 'preparing'].includes(phase) && <span className="flight-wordmark brand-wordmark">Seoul Times</span>}
-    {error && phase !== 'landed' && <p className="arrival-sr-only" role="alert">{error}</p>}
+    {(error || (phase === 'landed' && !position) || (!demo && position && (position.accuracyM > 20 || !containsPoint(position)))) && <div className="arrival-location-notice">
+      {error && <p role="alert">{error}</p>}
+      {!position && !error && <p role="status">현재 위치를 확인 중입니다. 지도 중심은 탐색용 위치이며 현재 위치가 아닙니다.</p>}
+      {!demo && position && position.accuracyM > 20 && <p role="status">대략적인 위치입니다(오차 약 {Math.ceil(position.accuracyM)}m). 신문을 열려면 위치 오차가 20m 이하여야 합니다.</p>}
+      {!demo && position && !containsPoint(position) && <p role="status">수신 위치가 서비스 지역 밖입니다. 지도는 서울 탐색 영역을 보여주며 현재 위치를 뜻하지 않습니다.</p>}
+      {phase === 'landed' && <button onClick={() => locate(true)}>현재 위치 다시 확인</button>}
+    </div>}
     <div className="arrival-sr-only" role="status" aria-live="polite">{phase === 'revealing' ? '근두운을 탄 홍길동이 나타납니다.' : phase === 'flying' ? '홍길동이 잠시 우리를 바라봅니다.' : phase === 'departing' ? '홍길동이 먼저 아래로 뛰어내립니다.' : phase === 'following' ? '홍길동을 따라 구름 속으로 내려갑니다.' : phase === 'falling' ? '홍길동이 서울 지도 위로 떨어집니다.' : phase === 'landed' ? '같은 서울 지도에서 장소를 탐색합니다.' : ''}</div>
     {phase === 'landed' && <><WorldControls entryRef={worldAction} places={places} selectedId={selectedId} onSelect={reader.select} filters={filters} onFilter={next => { setFilters(next); reader.clear(); }} position={position} demo={demo} tracking={tracking} status={error} onTrack={() => locate(true)} onStop={() => { setTracking(false); setError('위치 추적을 멈췄습니다.'); }} mapControlRef={mapControlRef} onMoveDemo={moveDemo} onDemo={onDemo} onRestart={restart} onSimulate={reader.simulate} onChat={openChat}/><VisitOverlays reader={reader} onChat={openChat} onTrack={() => locate(true)} reduced={reduced}/>{chat && <NearbyChat place={chat.place} onClose={() => setChat(null)}/>}</>}
   </section>;
