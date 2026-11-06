@@ -24,11 +24,11 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
   const [phase, setPhase] = useState('clouds'), [heroReady, setHeroReady] = useState(false);
   const [cloudsCleared, setCloudsCleared] = useState(false), [position, setPosition] = useState(null), [demo, setDemo] = useState(false);
   const [error, setError] = useState(''), [tracking, setTracking] = useState(false), [updates, setUpdates] = useState(0);
-  const [locationIssue, setLocationIssue] = useState(null), [chat, setChat] = useState(null), [notice, setNotice] = useState('');
+  const [locationIssue, setLocationIssue] = useState(null), [chat, setChat] = useState(null), [notice, setNotice] = useState(''), [isFallback, setIsFallback] = useState(false);
   const [paused, setPaused] = useState(false), [hidden, setHidden] = useState(document.hidden);
   const [reduced, setReduced] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false);
   const [filters, setFilters] = useState({ districtId: '', eraId: '', query: '' });
-  const reader = useVisitReader({ position, demo, issue: locationIssue, active: active && phase === 'landed' });
+  const reader = useVisitReader({ position, demo, fallback: isFallback, issue: locationIssue, active: active && phase === 'landed' });
   const { selectedId } = reader;
   const places = useMemo(() => filterPlaces(filters), [filters]);
   const sceneRoot = useRef(null), mounted = useRef(true), requestId = useRef(0), stageTime = useRef(0), worldAction = useRef(null);
@@ -39,7 +39,7 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
   const applyFallback = useCallback(reason => {
     if (hasRealFix.current) return;
     if (!usingFallback.current) {
-      usingFallback.current = true;
+      usingFallback.current = true; setIsFallback(true);
       const next = fallbackPosition();
       setPosition(next); setDemo(true); mapControlRef.current?.center(next);
     }
@@ -94,7 +94,7 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
       lastFix.current = Date.parse(next.observedAt);
       if (!containsPoint(next)) { applyFallback('outside'); return; }
       const wasFallback = usingFallback.current;
-      hasRealFix.current = true; usingFallback.current = false;
+      hasRealFix.current = true; usingFallback.current = false; setIsFallback(false);
       setPosition(next); setDemo(false); setNotice(''); setUpdates(value => value + 1); setError(''); setLocationIssue(null); callback.current?.(next, false);
       if (wasFallback) mapControlRef.current?.center(next);
     }, failure => { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); if (failure.code === 1) { setTracking(false); applyFallback('denied'); } }, lastFix.current);
@@ -124,7 +124,7 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
       if (real && !containsPoint(next)) applyFallback('outside');
       else {
         if (real) hasRealFix.current = true;
-        usingFallback.current = false;
+        usingFallback.current = false; setIsFallback(false);
         setPosition(next); setDemo(!real); setNotice(''); setUpdates(value => value + 1); callback.current?.(next, !real);
         mapControlRef.current?.center(next);
       }
@@ -164,6 +164,6 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
     {['revealing', 'flying', 'departing', 'following', 'preparing'].includes(phase) && <span className="flight-wordmark brand-wordmark">Seoul Times</span>}
     {error && phase !== 'landed' && <p className="arrival-sr-only" role="alert">{error}</p>}
     <div className="arrival-sr-only" role="status" aria-live="polite">{phase === 'revealing' ? '근두운을 탄 홍길동이 나타납니다.' : phase === 'flying' ? '홍길동이 잠시 우리를 바라봅니다.' : phase === 'departing' ? '홍길동이 먼저 아래로 뛰어내립니다.' : phase === 'following' ? '홍길동을 따라 구름 속으로 내려갑니다.' : phase === 'falling' ? '홍길동이 서울 지도 위로 떨어집니다.' : phase === 'landed' ? '같은 서울 지도에서 장소를 탐색합니다.' : ''}</div>
-    {phase === 'landed' && <><WorldControls entryRef={worldAction} places={places} selectedId={selectedId} onSelect={reader.select} filters={filters} onFilter={next => { setFilters(next); reader.clear(); }} position={position} demo={demo} tracking={tracking} status={error} onTrack={() => locate(true)} onStop={() => { setTracking(false); setError('위치 추적을 멈췄습니다.'); }} mapControlRef={mapControlRef} onMoveDemo={moveDemo} onDemo={onDemo} onRestart={restart} onSimulate={reader.simulate} onChat={openChat}/><VisitOverlays reader={reader} onChat={openChat} onTrack={() => locate(true)} reduced={reduced}/>{notice && <div className="visit-toast location-fallback-notice" role="status" aria-live="polite">{notice}</div>}{chat && <NearbyChat place={chat.place} onClose={() => setChat(null)}/>}</>}
+    {phase === 'landed' && <><WorldControls entryRef={worldAction} places={places} selectedId={selectedId} onSelect={reader.select} filters={filters} onFilter={next => { setFilters(next); reader.clear(); }} position={position} demo={demo} tracking={tracking} status={error} onTrack={() => locate(true)} onStop={() => { setTracking(false); setError('위치 추적을 멈췄습니다.'); }} mapControlRef={mapControlRef} onMoveDemo={moveDemo} onDemo={onDemo} onRestart={restart} onSimulate={reader.simulate} onChat={openChat}/><VisitOverlays reader={reader} onChat={openChat} onTrack={() => locate(true)} reduced={reduced}/>{notice && <div className="visit-toast location-fallback-notice" role="status" aria-live="polite">{notice}</div>}{chat && <NearbyChat place={chat.place} location={position && (!demo || isFallback) ? { latitude: position.latitude, longitude: position.longitude, ...(isFallback ? { fallback: true } : {}) } : null} onClose={() => setChat(null)}/>}</>}
   </section>;
 }

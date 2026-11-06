@@ -227,7 +227,7 @@ public class ChatTools {
             if (l == null || l.latitude() == null || l.longitude() == null) {
                 throw ApiException.badRequest("현재 위치를 받지 못했습니다. 사용자에게 출발지를 물어보세요.");
             }
-            start = new Start(null, "현재 위치", l.latitude(), l.longitude());
+            start = new Start(null, l.isFallback() ? "명지대 MCC" : "현재 위치", l.latitude(), l.longitude());
         } else if (text(input, "start_spot_id") != null) {
             start = new Start(text(input, "start_spot_id"), text(input, "start_label"), null, null);
         }

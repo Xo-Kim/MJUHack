@@ -202,6 +202,20 @@ class ChatIntegrationTests {
     }
 
     @Test
+    void mccFallbackLocationReachesToolsAndPromptWithoutCoordinates() throws Exception {
+        String sessionId = newSession("{\"eraId\":\"MODERN\"}");
+        claude.replies.add(toolCall("recommend_course", "{\"use_current_location\":true,\"stop_count\":3}"));
+        claude.replies.add(answer("명지대 MCC 기준 코스예요."));
+        mvc.perform(post("/api/chat/sessions/" + sessionId + "/messages").contentType(MediaType.APPLICATION_JSON).content("""
+                {"content":"코스 짜줘","location":{"latitude":37.58,"longitude":126.9238,"fallback":true}}
+                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.course.startLabel").value("명지대 MCC"))
+                .andExpect(jsonPath("$.course.stops[0].spot.id").value("SDM02"));
+        assertThat(claude.requests.get(0).toString()).contains("명지대 MCC 를 기준점으로").doesNotContain("126.9238");
+    }
+
+    @Test
     void nearbySearchMarksPlacesWithoutEvidence() throws Exception {
         String sessionId = newSession("{}");
         claude.replies.add(toolCall("search_nearby_places", "{\"category\":\"restaurant\",\"near_spot_id\":\"JNG12\",\"radius_km\":2}"));

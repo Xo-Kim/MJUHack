@@ -11,8 +11,16 @@ public final class ChatDtos {
     private ChatDtos() {
     }
 
-    /** 이번 요청의 거리 계산에만 쓴다. 저장하지 않고 Claude 에게도 보내지 않는다. */
-    public record Location(Double latitude, Double longitude) {
+    /**
+     * 이번 요청의 거리 계산에만 쓴다. 저장하지 않고 Claude 에게도 보내지 않는다.
+     *
+     * @param fallback 실제 위치를 못 받아 명지대 MCC 를 기준점으로 쓰는 경우 true
+     */
+    public record Location(Double latitude, Double longitude, Boolean fallback) {
+
+        public boolean isFallback() {
+            return Boolean.TRUE.equals(fallback);
+        }
     }
 
     public record ChatRequest(String content, Location location) {

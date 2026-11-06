@@ -1,5 +1,5 @@
 const options = { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 };
-// 오차가 커도 지도 표시에는 쓴다. 신문을 여는 20m·오차 조건은 newspaper/visit.js 가 따로 검사한다.
+// 오차가 커도 지도 표시에는 쓴다. 신문을 여는 거리·오차 조건은 newspaper/visit.js 가 따로 검사한다.
 function positionValue({ coords, timestamp }) {
   if (!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude) || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180 || !Number.isFinite(coords.accuracy) || coords.accuracy < 0 || !Number.isFinite(timestamp)) {
     const error = new Error('위치 값이 올바르지 않습니다. 마지막 확인 위치를 유지합니다.');
@@ -29,7 +29,7 @@ export function watchPosition(onPosition, onError, afterTimestamp = 0) {
   }, error => { if (active) onError(positionError(error)); }, options);
   return () => { active = false; navigator.geolocation.clearWatch(watchId); };
 }
-// 위치를 못 받거나 서비스 지역 밖일 때 지도 기준점으로 쓰는 명지대학교 MCC 앞. 방문 인증에는 쓰지 않는다.
+// 위치를 못 받거나 서비스 지역 밖일 때 기준점으로 쓰는 명지대학교 MCC 앞. 지도, 신문 거리 판정, 챗봇이 모두 이 위치를 쓴다.
 export function fallbackPosition() {
   return { latitude: 37.58, longitude: 126.9238, accuracyM: null, observedAt: new Date().toISOString(), photoGps: null };
 }

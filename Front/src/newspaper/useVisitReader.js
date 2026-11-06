@@ -3,14 +3,15 @@ import { places } from '../data/places';
 import newspapers from '../data/newspapers.json';
 import { evaluateVisit, newspaperLanguage, positionAtDistance, visitMessages, VISIT_FIX_MAX_AGE_MS } from './visit';
 
-export default function useVisitReader({ position, demo, issue, active }) {
+export default function useVisitReader({ position, demo, fallback = false, issue, active }) {
   const [selectedId, setSelectedId] = useState(null), [opened, setOpened] = useState(false);
   const [simulation, setSimulation] = useState(null), [toast, setToast] = useState(null), [clock, setClock] = useState(Date.now);
   const toastId = useRef(0);
   const place = places.find(item => item.id === selectedId);
   const language = simulation?.language || newspaperLanguage();
   const visitPosition = simulation ? simulation.position : position;
-  const source = simulation ? 'simulation' : demo ? 'demo' : 'gps';
+  const liveSource = fallback ? 'fallback' : demo ? 'demo' : 'gps';
+  const source = simulation ? 'simulation' : liveSource;
   const gate = evaluateVisit({ place, position: visitPosition, source, issue: simulation?.issue || (!simulation && issue), now: Math.max(clock, Date.now()), allowSimulation: process.env.NODE_ENV === 'development' });
   const record = newspapers[selectedId];
   const notify = useCallback(message => setToast({ message, id: ++toastId.current }), []);
@@ -19,7 +20,7 @@ export default function useVisitReader({ position, demo, issue, active }) {
     setSimulation(null); setSelectedId(id); setOpened(false); setClock(Date.now());
     if (!id) return;
     const nextPlace = places.find(item => item.id === id);
-    const nextGate = evaluateVisit({ place: nextPlace, position, source: demo ? 'demo' : 'gps', issue });
+    const nextGate = evaluateVisit({ place: nextPlace, position, source: liveSource, issue });
     if (nextGate.allowed && newspapers[id]) setOpened(true);
     else notify(visitMessages[newspaperLanguage()][nextGate.reason] || (newspaperLanguage() === 'ko' ? '이 장소의 신문을 준비 중이에요.' : 'The newspaper for this place is not available yet.'));
   }

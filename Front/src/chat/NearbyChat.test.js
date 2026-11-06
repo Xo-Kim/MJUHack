@@ -10,7 +10,7 @@ test('explicit messages use the real API adapter and preserve session across fol
  fireEvent.change(screen.getByLabelText('추천 요청'),{target:{value:'근처 카페 추천'}});fireEvent.click(screen.getByRole('button',{name:'보내기'}));
  expect(await screen.findByText('서버에서 확인한 답변')).toBeInTheDocument();
  expect(createChatSession).toHaveBeenCalledWith({id:'JNG09',name:'의금부 터'},expect.any(AbortSignal));
- expect(sendChatMessage).toHaveBeenCalledWith('session-1','근처 카페 추천',expect.any(AbortSignal));
+ expect(sendChatMessage).toHaveBeenCalledWith('session-1','근처 카페 추천',expect.any(AbortSignal),null);
  fireEvent.change(screen.getByLabelText('추천 요청'),{target:{value:'식당도'}});fireEvent.click(screen.getByRole('button',{name:'보내기'}));
  await screen.findByText('식당도');expect(createChatSession).toHaveBeenCalledTimes(1);
 });

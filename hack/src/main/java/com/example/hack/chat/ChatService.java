@@ -89,7 +89,7 @@ public class ChatService {
         SessionResponse before = sessions.get(sessionId);
         List<StoredMessage> history = recentMessages(sessionId);
 
-        MessageCreateParams.Builder request = baseRequest(before, location != null);
+        MessageCreateParams.Builder request = baseRequest(before, location);
         history.forEach(m -> {
             if ("USER".equals(m.role())) {
                 request.addUserMessage(m.content());
@@ -178,7 +178,7 @@ public class ChatService {
         return ContentBlockParam.ofToolResult(result.build());
     }
 
-    private MessageCreateParams.Builder baseRequest(SessionResponse session, boolean hasLocation) {
+    private MessageCreateParams.Builder baseRequest(SessionResponse session, Location location) {
         MessageCreateParams.Builder b = MessageCreateParams.builder()
                 .model(props.model())
                 .maxTokens(props.maxTokens())
@@ -190,7 +190,7 @@ public class ChatService {
                         // 고정 부분만 캐시한다. 상태는 매번 바뀌므로 그 뒤에 둔다
                         TextBlockParam.builder().text(prompts.stable())
                                 .cacheControl(CacheControlEphemeral.builder().build()).build(),
-                        TextBlockParam.builder().text(prompts.state(session, hasLocation)).build()));
+                        TextBlockParam.builder().text(prompts.state(session, location)).build()));
         tools.definitions().forEach(b::addTool);
         return b;
     }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createChatSession, sendChatMessage } from './api';
 import './chat.css';
 
-export default function NearbyChat({ place, onClose }) {
+export default function NearbyChat({ place, location = null, onClose }) {
   const [input,setInput]=useState(''),[messages,setMessages]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const session=useRef(null), request=useRef(null), mounted=useRef(true), dialog=useRef(null), bottom=useRef(null);
   useEffect(()=>{const previous=document.activeElement;mounted.current=true;dialog.current.focus();return()=>{mounted.current=false;request.current?.abort();if(previous?.isConnected)previous.focus({preventScroll:true});};},[]);
@@ -12,7 +12,7 @@ export default function NearbyChat({ place, onClose }) {
     setBusy(true);setError('');const controller=new AbortController();request.current=controller;
     try{
       if(!session.current)session.current=await createChatSession(place,controller.signal);
-      const answer=await sendChatMessage(session.current,content,controller.signal);
+      const answer=await sendChatMessage(session.current,content,controller.signal,location);
       if(mounted.current){setMessages(items=>[...items,{role:'user',text:content},{role:'assistant',text:answer}]);setInput('');}
     }catch(failure){if(mounted.current&&failure.name!=='AbortError')setError(failure.message==='Failed to fetch'?'추천 서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.':failure.message);}
     finally{if(mounted.current)setBusy(false);}
