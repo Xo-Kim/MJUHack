@@ -4,19 +4,27 @@ import HeroCanvas from './HeroCanvas';
 import LandingMap from './LandingMap';
 import WorldControls from './WorldControls';
 import { ARRIVAL_TIMING, NEXT_PHASE } from './heroConfig';
-import { demoPosition, requestPosition, watchPosition } from './location';
+import { demoPosition, fallbackPosition, requestPosition, watchPosition } from './location';
+import { containsPoint } from '../data/mapArea';
 import { filterPlaces } from '../data/places';
 import useVisitReader from '../newspaper/useVisitReader';
 import NearbyChat from '../chat/NearbyChat';
 import VisitOverlays from '../newspaper/VisitOverlays';
 import './arrival.css';
 
+const MAP_PHASES = ['following', 'preparing', 'clearing', 'falling', 'impact', 'pullback', 'landed'];
+const FALLBACK_MESSAGES = {
+  denied: '위치 권한이 꺼져 있어 명지대 MCC를 기준으로 보여줘요.',
+  missing: '현재 위치를 받지 못해 명지대 MCC를 기준으로 보여줘요.',
+  outside: '서비스 지역 밖이라 명지대 MCC를 기준으로 보여줘요.'
+};
+
 export default function CloudArrival({ onLocated, onDemo, active = true }) {
   const development = process.env.NODE_ENV === 'development';
   const [phase, setPhase] = useState('clouds'), [heroReady, setHeroReady] = useState(false);
   const [cloudsCleared, setCloudsCleared] = useState(false), [position, setPosition] = useState(null), [demo, setDemo] = useState(false);
   const [error, setError] = useState(''), [tracking, setTracking] = useState(false), [updates, setUpdates] = useState(0);
-  const [locationIssue, setLocationIssue] = useState(null), [chat, setChat] = useState(null);
+  const [locationIssue, setLocationIssue] = useState(null), [chat, setChat] = useState(null), [notice, setNotice] = useState('');
   const [paused, setPaused] = useState(false), [hidden, setHidden] = useState(document.hidden);
   const [reduced, setReduced] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false);
   const [filters, setFilters] = useState({ districtId: '', eraId: '', query: '' });
@@ -25,9 +33,25 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
   const places = useMemo(() => filterPlaces(filters), [filters]);
   const sceneRoot = useRef(null), mounted = useRef(true), requestId = useRef(0), stageTime = useRef(0), worldAction = useRef(null);
   const scrollDistance = useRef(0), touchStart = useRef(null), startScroll = useRef(null);
-  const anchorRef = useRef(null), mapControlRef = useRef(null), mapPrepared = useRef(false), phaseRef = useRef(phase), callback = useRef(onLocated), activeRef = useRef(active), lastFix = useRef(0);
+  const anchorRef = useRef(null), mapControlRef = useRef(null), mapPrepared = useRef(false), phaseRef = useRef(phase), callback = useRef(onLocated), activeRef = useRef(active), lastFix = useRef(0), hasRealFix = useRef(false), usingFallback = useRef(false);
   phaseRef.current = phase; callback.current = onLocated; activeRef.current = active;
 
+  const applyFallback = useCallback(reason => {
+    if (hasRealFix.current) return;
+    if (!usingFallback.current) {
+      usingFallback.current = true;
+      const next = fallbackPosition();
+      setPosition(next); setDemo(true); mapControlRef.current?.center(next);
+    }
+    if (reason) setNotice(FALLBACK_MESSAGES[reason]);
+  }, []);
+  // 실제 위치가 늦거나 실패해도 지도와 캐릭터가 기준점을 갖도록, 지도가 뜨기 전에 MCC 를 잡아 둔다.
+  useEffect(() => { if (!position && MAP_PHASES.includes(phase)) applyFallback(); }, [position, phase, applyFallback]);
+  useEffect(() => {
+    if (!notice || phase !== 'landed') return;
+    const timer = setTimeout(() => setNotice(''), 4000);
+    return () => clearTimeout(timer);
+  }, [notice, phase]);
   useEffect(() => {
     mounted.current = true;
     const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -68,9 +92,13 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
     return watchPosition(next => {
       if (Date.parse(next.observedAt) <= lastFix.current) return;
       lastFix.current = Date.parse(next.observedAt);
-      setPosition(next); setUpdates(value => value + 1); setError(''); setLocationIssue(null); callback.current?.(next, false);
-    }, failure => { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); if (failure.code === 1) setTracking(false); }, lastFix.current);
-  }, [tracking, phase, active, hidden]);
+      if (!containsPoint(next)) { applyFallback('outside'); return; }
+      const wasFallback = usingFallback.current;
+      hasRealFix.current = true; usingFallback.current = false;
+      setPosition(next); setDemo(false); setNotice(''); setUpdates(value => value + 1); setError(''); setLocationIssue(null); callback.current?.(next, false);
+      if (wasFallback) mapControlRef.current?.center(next);
+    }, failure => { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); if (failure.code === 1) { setTracking(false); applyFallback('denied'); } }, lastFix.current);
+  }, [tracking, phase, active, hidden, applyFallback]);
 
   const mapReady = useCallback(() => {
     mapPrepared.current = true;
@@ -92,13 +120,19 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
       const next = real ? await requestPosition() : demoPosition();
       if (!mounted.current || !activeRef.current || id !== requestId.current) return;
       lastFix.current = Date.parse(next.observedAt);
-      setPosition(next); setDemo(!real); setTracking(real); setLocationIssue(null); setUpdates(value => value + 1); callback.current?.(next, !real);
-      mapControlRef.current?.center(next);
+      setTracking(real); setLocationIssue(null);
+      if (real && !containsPoint(next)) applyFallback('outside');
+      else {
+        if (real) hasRealFix.current = true;
+        usingFallback.current = false;
+        setPosition(next); setDemo(!real); setNotice(''); setUpdates(value => value + 1); callback.current?.(next, !real);
+        mapControlRef.current?.center(next);
+      }
       if (!alreadyLanded && !automatic) {
         stageTime.current = 0; setCloudsCleared(false);
         setPhase(mapPrepared.current ? 'clearing' : 'preparing');
       }
-    } catch (failure) { if (mounted.current && id === requestId.current) { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); if (failure.code === 1) setTracking(false); if (!alreadyLanded && !automatic) setPhase('flying'); } }
+    } catch (failure) { if (mounted.current && id === requestId.current) { setError(failure.message); setLocationIssue(failure.code === 1 ? 'denied' : failure.code === 'accuracy' ? 'accuracy' : 'missing'); setTracking(failure.code !== 1); applyFallback(failure.code === 1 ? 'denied' : 'missing'); if (!alreadyLanded && !automatic) setPhase('flying'); } }
   }
   function revealFromScroll() {
     if (!active || !heroReady || paused || phaseRef.current !== 'clouds') return;
@@ -130,6 +164,6 @@ export default function CloudArrival({ onLocated, onDemo, active = true }) {
     {['revealing', 'flying', 'departing', 'following', 'preparing'].includes(phase) && <span className="flight-wordmark brand-wordmark">Seoul Times</span>}
     {error && phase !== 'landed' && <p className="arrival-sr-only" role="alert">{error}</p>}
     <div className="arrival-sr-only" role="status" aria-live="polite">{phase === 'revealing' ? '근두운을 탄 홍길동이 나타납니다.' : phase === 'flying' ? '홍길동이 잠시 우리를 바라봅니다.' : phase === 'departing' ? '홍길동이 먼저 아래로 뛰어내립니다.' : phase === 'following' ? '홍길동을 따라 구름 속으로 내려갑니다.' : phase === 'falling' ? '홍길동이 서울 지도 위로 떨어집니다.' : phase === 'landed' ? '같은 서울 지도에서 장소를 탐색합니다.' : ''}</div>
-    {phase === 'landed' && <><WorldControls entryRef={worldAction} places={places} selectedId={selectedId} onSelect={reader.select} filters={filters} onFilter={next => { setFilters(next); reader.clear(); }} position={position} demo={demo} tracking={tracking} status={error} onTrack={() => locate(true)} onStop={() => { setTracking(false); setError('위치 추적을 멈췄습니다.'); }} mapControlRef={mapControlRef} onMoveDemo={moveDemo} onDemo={onDemo} onRestart={restart} onSimulate={reader.simulate} onChat={openChat}/><VisitOverlays reader={reader} onChat={openChat} onTrack={() => locate(true)} reduced={reduced}/>{chat && <NearbyChat place={chat.place} onClose={() => setChat(null)}/>}</>}
+    {phase === 'landed' && <><WorldControls entryRef={worldAction} places={places} selectedId={selectedId} onSelect={reader.select} filters={filters} onFilter={next => { setFilters(next); reader.clear(); }} position={position} demo={demo} tracking={tracking} status={error} onTrack={() => locate(true)} onStop={() => { setTracking(false); setError('위치 추적을 멈췄습니다.'); }} mapControlRef={mapControlRef} onMoveDemo={moveDemo} onDemo={onDemo} onRestart={restart} onSimulate={reader.simulate} onChat={openChat}/><VisitOverlays reader={reader} onChat={openChat} onTrack={() => locate(true)} reduced={reduced}/>{notice && <div className="visit-toast location-fallback-notice" role="status" aria-live="polite">{notice}</div>}{chat && <NearbyChat place={chat.place} onClose={() => setChat(null)}/>}</>}
   </section>;
 }

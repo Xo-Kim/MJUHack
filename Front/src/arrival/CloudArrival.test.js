@@ -42,6 +42,21 @@ test('a denied real GPS never becomes a visit or demo fix and the scroll sequenc
   await reveal();expect(screen.getByRole('alert')).toHaveTextContent('위치 권한');expect(located).not.toHaveBeenCalled();
   land();expect(container.firstChild).toHaveClass('phase-landed');expect(located).not.toHaveBeenCalled();
 });
+test('when GPS fails the map falls back to MCC, stays unverified, and a later real fix replaces it',async()=>{
+  process.env.NODE_ENV='production';requestPosition.mockRejectedValue(Object.assign(new Error('GPS를 가져오지 못했습니다.'),{code:2}));
+  const located=jest.fn();const {container}=render(<CloudArrival onLocated={located}/>);await reveal();land();
+  expect(container.firstChild).toHaveClass('phase-landed');expect(screen.getByText(/명지대 MCC를 기준으로/)).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'홍길동 위치로 돌아가기'})).toBeEnabled();expect(located).not.toHaveBeenCalled();
+  const fix={latitude:37.571,longitude:126.98,accuracyM:150,observedAt:new Date(Date.now()+1000).toISOString()};
+  act(()=>watchPosition.mock.calls[0][0](fix));
+  expect(located).toHaveBeenLastCalledWith(fix,false);expect(screen.queryByText(/명지대 MCC를 기준으로/)).not.toBeInTheDocument();
+});
+test('a position outside the service area falls back to MCC instead of leaving the character off screen',async()=>{
+  process.env.NODE_ENV='production';requestPosition.mockResolvedValue({latitude:37.4979,longitude:127.0276,accuracyM:10,observedAt:new Date().toISOString()});
+  const located=jest.fn();render(<CloudArrival onLocated={located}/>);await reveal();land();
+  expect(screen.getByText(/서비스 지역 밖이라 명지대 MCC/)).toBeInTheDocument();expect(located).not.toHaveBeenCalled();
+  expect(screen.getByRole('button',{name:'홍길동 위치로 돌아가기'})).toBeEnabled();
+});
 test('keyboard entry and pause preserve the reveal timeline',()=>{
   const {container}=render(<CloudArrival/>);
   fireEvent.keyDown(window,{key:'ArrowDown'});fireEvent.click(screen.getByRole('button',{name:'모션 멈추기'}));
